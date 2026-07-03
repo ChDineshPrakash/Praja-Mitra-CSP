@@ -1,0 +1,21 @@
+{
+  "short_name": "Praja Mitra",
+  "name": "Praja Mitra - AI Government Assistant",
+  "icons": [
+    {
+      "src": "https://img.icons8.com/color/192/government-of-india.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "https://img.icons8.com/color/512/government-of-india.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ],
+  "start_url": "/",
+  "background_color": "#f8fafc",
+  "theme_color": "#059669",
+  "display": "standalone",
+  "orientation": "portrait"
+}

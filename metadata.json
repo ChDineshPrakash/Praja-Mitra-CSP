@@ -1,0 +1,8 @@
+{
+  "name": "Praja Mitra",
+  "description": "AI Government Schemes & Services Assistant for Andhra Pradesh, supporting Telugu language, voice guide, Elder Mode, and offline support.",
+  "requestFramePermissions": [
+    "microphone"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
