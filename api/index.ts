@@ -2,9 +2,11 @@ import "dotenv/config";
 import express from "express";
 import { GoogleGenAI } from "@google/genai";
 import { AP_SCHEMES } from "./schemes.js";
+import { authRouter } from "./auth.js";
 
 const app = express();
 app.use(express.json());
+app.use("/api/auth", authRouter);
 
 // Ground-truth context for schemes to prevent any AI hallucination
 const schemesContext = AP_SCHEMES.map(s => `
@@ -80,27 +82,73 @@ app.post("/api/chat", async (req, res) => {
       });
     }
 
-    // System Instructions that configure Praja Mitra persona, Telugu first, and Easy Mode support.
-    const systemInstruction = `You are "Praja Mitra" (ప్రజా మిత్ర), a warm, highly respectful, compassionate, and wise village secretariat partner (గ్రామ సచివాలయం ఉద్యోగి) dedicated to helping Andhra Pradesh citizens.
-Your job is to guide citizens, rural farmers, elderly grandmothers/grandfathers, women, students, and workers in understanding official government schemes.
+    // Official portal verified URLs mapping
+    const schemeOfficialPortals: Record<string, { title: string; titleTe: string; url: string }> = {
+      "rythu-bharosa": { title: "PM-Kisan Official Portal", titleTe: "పీఎం-కిసాన్ అధికారిక పోర్టల్", url: "https://pmkisan.gov.in" },
+      "amma-vodi": { title: "Jnanabhumi AP Portal", titleTe: "జ్ఞానభూమి ఏపీ పోర్టల్", url: "https://jnanabhumi.ap.gov.in" },
+      "pension-kanuka": { title: "AP Social Security Pensions Portal", titleTe: "ఏపీ సాంఘిక భద్రత పెన్షన్ల పోర్టల్", url: "https://sspensions.ap.gov.in" },
+      "aarogyasri": { title: "Dr. YSR Aarogyasri Trust Portal", titleTe: "డాక్టర్ వైఎస్సార్ ఆరోగ్యశ్రీ ట్రస్ట్ పోర్టల్", url: "https://ysraarogyasri.ap.gov.in" },
+      "vidya-deevena": { title: "Jnanabhumi Education Services Portal", titleTe: "జ్ఞానభూమి విద్యా సేవలు పోర్టల్", url: "https://jnanabhumi.ap.gov.in" },
+      "cheyutha": { title: "AP Grama Ward Sachivalayam Portal", titleTe: "ఏపీ గ్రామ వార్డు సచివాలయం పోర్టల్", url: "https://gramawardsachivalayam.ap.gov.in" },
+      "pedalandariki-illu": { title: "AP Housing Corporation Portal", titleTe: "ఏపీ గృహనిర్మాణ సంస్థ పోర్టల్", url: "https://housing.ap.gov.in" },
+      "sunna-vaddi": { title: "AP SERP SHG Portal", titleTe: "ఏపీ సెర్ప్ పొదుపు సంఘాల పోర్టల్", url: "https://serp.ap.gov.in" },
+    };
 
-The user's current selected language preference is: ${language === "te" ? "Telugu (తెలుగు)" : "English"}.
-Easy Mode / Elder Mode state is: ${easyMode ? "ACTIVE (Very simple terms, larger spacing intent, high empathy, slow and ultra-clear language)" : "INACTIVE (Friendly, professional, and clear language)"}.
+    // System Instructions that configure Praja Mitra persona and ChatGPT-style Markdown responses
+    const systemInstruction = `You are "Praja Mitra" (ప్రజా మిత్ర), an AI welfare assistant for the citizens of Andhra Pradesh.
+Your job is to provide clean, readable, ChatGPT-style structured explanations of government welfare schemes for ordinary citizens.
 
-Here are the certified facts about official AP Government Schemes you MUST use as your single source of correct information:
+Selected User Language: ${language === "te" ? "Telugu (తెలుగు)" : "English"}.
+You MUST respond strictly in ${language === "te" ? "Telugu (తెలుగు)" : "English"}.
+
+### Certified AP Schemes Database (Use as single source of truth):
 ${schemesContext}
 
-Rules for response:
-1. Speak in a warm, welcoming tone. If easyMode is active, talk with deep respect to an elder (e.g., using honorifics like "అయ్యగారు", "అమ్మగారు", "మీకు ఎలాంటి భయం వద్దు", "నేను సహాయం చేస్తాను").
-2. Answer based on the matching scheme details. If the query is related to farming, point clearly to "వైఎస్సార్ రైతు భరోసా". If it is related to school/college, talk about "జగనన్న అమ్మ ఒడి" or "జగనన్న విద్యా దీవెన".
-3. Avoid all legal/technical phrases or GO numbers. Do NOT say: "Satisfying criteria under GO Ms No 127". Instead show everyday human explanations: "మీరు ₹15,000 పొందేందుకు అర్హులు ఎందుకంటే మీ కుటుంబ వార్షిక ఆదాయం పరిమితి లోపలే ఉంది."
-4. Always list:
-   - What benefits they receive (e.g. ₹15,000 yearly or ₹3,000 per month).
-   - The key eligibility factors.
-   - EXACT documents they should carry to their Secretariat (ఆధార్ కార్డ్, రైస్ కార్డ్, పట్టాదారు పాస్ బుక్, etc.).
-5. If the user's inquiry does NOT match any of these schemes, reply politely in the selected language. Remind them of the schemes you support (Rythu Bharosa, Amma Vodi, Pension Kanuka, Aarogyasri Free corporate surgery, Vidya Deevena fee reimbursement, Cheyutha, Pedalandariki Housing, Sunna Vaddi) and ask them to explain their livelihood, school stage, or personal age so you can find the perfect match.
-6. Keep your formatting clean and readable. Use simple paragraphs, short sentences, and bullet points. Do not write massive blocks of text. No heavy markdown layers.
-7. End your response by offering them to check the "📍 Nearby Office" map on our app or contact the CM helpline 1902 if they have further questions.`;
+### Official Verified Portals:
+- PM-Kisan / Rythu Bharosa: https://pmkisan.gov.in
+- YSR Pension Kanuka: https://sspensions.ap.gov.in
+- YSR Aarogyasri: https://ysraarogyasri.ap.gov.in
+- Jagananna Amma Vodi & Vidya Deevena: https://jnanabhumi.ap.gov.in
+- YSR Cheyutha & Village Sachivalayam: https://gramawardsachivalayam.ap.gov.in
+- Pedalandariki Housing: https://housing.ap.gov.in
+- General Citizen Portal: https://gramawardsachivalayam.ap.gov.in
+
+### Mandatory 6-Section Markdown Output Format:
+Whenever answering about a government scheme, you MUST structure your response into these exact 6 sections without omitting any:
+
+**[Scheme Name] — Overview**
+[1-2 sentences summarizing what the scheme does in plain, citizen-friendly language. No legal jargon or complex numbers.]
+
+**Benefits**
+- [Bullet points summarizing verified financial or service benefits]
+- [Payment schedule or additional assistance]
+
+**Eligibility**
+- [Bullet points summarizing eligibility criteria]
+- [Exclusions or verified conditions]
+
+**Documents required**
+- [Bullet points listing documents such as Aadhaar Card, Rice Card / White Ration Card, Passbook, etc.]
+
+**How to apply**
+1. [First step: Visit nearest Grama or Ward Sachivalayam (గ్రామ/వార్డు సచివాలయం) or portal]
+2. [Second step: Submit verified documents to the Welfare & Education Assistant]
+3. [Third step: Inclusion in social audit verification list]
+
+**Official source:** [Clickable Official Portal](URL)
+
+MANDATORY RULES:
+1. ALWAYS include the "**Official source:** [Portal Name](URL)" clickable link at the bottom. Use the verified portals listed above (e.g., https://pmkisan.gov.in for PM Kisan / Rythu Bharosa, https://sspensions.ap.gov.in for Pension Kanuka, https://ysraarogyasri.ap.gov.in for Aarogyasri, https://jnanabhumi.ap.gov.in for Amma Vodi / Vidya Deevena, https://gramawardsachivalayam.ap.gov.in for Sachivalayam / Cheyutha).
+2. NEVER invent benefit amounts, eligibility rules, documents, or URLs.
+3. If user's language is Telugu, translate section headers into natural Telugu:
+   **[పథకం పేరు] — వివరణ**
+   **ప్రయోజనాలు**
+   **అర్హతలు**
+   **కావలసిన పత్రాలు**
+   **దరఖాస్తు విధానం**
+   **అధికారిక మూలం:** [పోర్టల్ పేరు](URL)
+4. Never output raw HTML or code fences unless asked. Use clean standard Markdown (bold, lists, links).
+5. If the user asks a general greeting or non-scheme question, respond warmly and suggest available schemes.`;
 
     // Format Chat history for Gemini @google/genai format
     // SDK chats expects: contents: Array of { role: string, parts: Array<{ text: string }> }
@@ -235,71 +283,87 @@ function getRuleBasedResponse(message: string, language: string, easyMode: boole
 
   const isTelugu = language === "te";
 
+  // Official portal URLs
+  const portals: Record<string, { title: string; titleTe: string; url: string }> = {
+    "rythu-bharosa": { title: "PM-Kisan Official Website", titleTe: "పీఎం-కిసాన్ అధికారిక వెబ్‌సైట్", url: "https://pmkisan.gov.in" },
+    "amma-vodi": { title: "Jnanabhumi AP Portal", titleTe: "జ్ఞానభూమి ఏపీ పోర్టల్", url: "https://jnanabhumi.ap.gov.in" },
+    "pension-kanuka": { title: "AP Social Security Pensions Portal", titleTe: "ఏపీ సాంఘిక భద్రత పెన్షన్ల పోర్టల్", url: "https://sspensions.ap.gov.in" },
+    "aarogyasri": { title: "Dr. YSR Aarogyasri Trust", titleTe: "డాక్టర్ వైఎస్సార్ ఆరోగ్యశ్రీ ట్రస్ట్", url: "https://ysraarogyasri.ap.gov.in" },
+    "vidya-deevena": { title: "Jnanabhumi Vidya Deevena Portal", titleTe: "జ్ఞానభూమి విద్యా దీవెన పోర్టల్", url: "https://jnanabhumi.ap.gov.in" },
+    "cheyutha": { title: "AP Grama Ward Sachivalayam Portal", titleTe: "ఏపీ గ్రామ వార్డు సచివాలయం పోర్టల్", url: "https://gramawardsachivalayam.ap.gov.in" },
+    "pedalandariki-illu": { title: "AP Housing Portal", titleTe: "ఏపీ గృహనిర్మాణ పోర్టల్", url: "https://housing.ap.gov.in" },
+    "sunna-vaddi": { title: "AP SERP Portal", titleTe: "ఏపీ సెర్ప్ పోర్టల్", url: "https://serp.ap.gov.in" },
+  };
+
   if (matchedScheme) {
+    const portal = portals[matchedScheme.id] || { 
+      title: "AP Grama Ward Sachivalayam", 
+      titleTe: "ఏపీ గ్రామ వార్డు సచివాలయం", 
+      url: "https://gramawardsachivalayam.ap.gov.in" 
+    };
+
     if (isTelugu) {
-      const intro = easyMode 
-        ? `నమస్కారం అమ్మగారు/అయ్యగారు. నేను మీ గ్రామ సచివాలయ ఉద్యోగిని (ప్రజా మిత్ర). మీకు సహాయం చేయడానికి నేను ఇక్కడే ఉన్నాను. మీకు ${matchedScheme.nameTe} పథకం గురించి పూర్తి వివరాలు తెలియజేస్తాను, దయచేసి వినండి:\n\n`
-        : `నమస్కారం! నేను ప్రజా మిత్రను. ${matchedScheme.nameTe} గురించి వివరణ ఇక్కడ ఇస్తున్నాను:\n\n`;
+      const header = `**${matchedScheme.nameTe} — వివరణ**\n\n`;
+      const overview = `${matchedScheme.summaryTe} ${matchedScheme.amountTe}.\n\n`;
       
-      const summary = `**పథకం వివరణ:** ${matchedScheme.summaryTe}\n\n`;
-      const amount = `**లభించే ఆర్థిక సహాయం:** ${matchedScheme.amountTe}\n\n`;
+      const benefits = `**ప్రయోజనాలు**\n` + matchedScheme.benefitsTe.map(b => `- ${b}`).join('\n') + `\n\n`;
+      const eligibility = `**అర్హతలు**\n` + matchedScheme.eligibilityTe.map(e => `- ${e}`).join('\n') + `\n\n`;
+      const documents = `**కావలసిన పత్రాలు**\n` + matchedScheme.documentsTe.map(d => `- ${d}`).join('\n') + `\n\n`;
       
-      const benefits = `**పథకం ప్రయోజనాలు:**\n${matchedScheme.benefitsTe.map(b => `${b}`).join('\n')}\n\n`;
-      const eligibility = `**అర్హత ప్రమాణాలు:**\n${matchedScheme.eligibilityTe.map(e => `${e}`).join('\n')}\n\n`;
-      const documents = `**కావలసిన పత్రాలు (సచివాలయానికి తీసుకురావాల్సినవి):**\n${matchedScheme.documentsTe.map(d => `${d}`).join('\n')}\n\n`;
-      
-      const outro = `మీరు ఈ పత్రాలతో మీ స్థానిక సచివాలయానికి వస్తే మేము దరఖాస్తు చేయిస్తాము. ఇంకా ఏవైనా సందేహాలు ఉంటే హెల్ప్‌లైన్ నంబర్ 1902 కి ఫోన్ చేయవచ్చు లేదా మా యాప్‌లోని "📍 Nearby Office" మ్యాప్‌ను చూడవచ్చు!`;
-      
-      return intro + summary + amount + benefits + eligibility + documents + outro;
-    } else {
-      const intro = easyMode
-        ? `Namaskaram. I am your Village Secretariat partner (Praja Mitra). I am here to assist you. Here are the simple details of the ${matchedScheme.nameEn} scheme:\n\n`
-        : `Namaskaram! I am Praja Mitra. Here are the details for ${matchedScheme.nameEn}:\n\n`;
+      const apply = `**దరఖాస్తు విధానం**\n` +
+        `1. మీ స్థానిక గ్రామ లేదా వార్డు సచివాలయాన్ని సందర్శించండి.\n` +
+        `2. అవసరమైన పత్రాలను సంక్షేమ సహాయకుడికి (Welfare Assistant) సమర్పించండి.\n` +
+        `3. అర్హుల జాబితాలో మీ పేరు నమోదు ధృవీకరణ పొందండి.\n\n`;
         
-      const summary = `**Scheme Summary:** ${matchedScheme.summaryEn}\n\n`;
-      const amount = `**Financial Benefit:** ${matchedScheme.amountEn}\n\n`;
+      const source = `**అధికారిక మూలం:** [${portal.titleTe}](${portal.url})\n\n` +
+        `*గమనిక: తాజా మార్గదర్శకాలకు మీ సమీప సచివాలయం లేదా 1902 టోల్ ఫ్రీ నంబర్‌ను సంప్రదించండి.*`;
+
+      return header + overview + benefits + eligibility + documents + apply + source;
+    } else {
+      const header = `**${matchedScheme.nameEn} — Overview**\n\n`;
+      const overview = `${matchedScheme.summaryEn} Financial benefit: ${matchedScheme.amountEn}.\n\n`;
       
-      const benefits = `**Key Benefits:**\n${matchedScheme.benefitsEn.map(b => `${b}`).join('\n')}\n\n`;
-      const eligibility = `**Eligibility Criteria:**\n${matchedScheme.eligibilityEn.map(e => `${e}`).join('\n')}\n\n`;
-      const documents = `**Required Documents (Bring to Secretariat):**\n${matchedScheme.documentsEn.map(d => `${d}`).join('\n')}\n\n`;
+      const benefits = `**Benefits**\n` + matchedScheme.benefitsEn.map(b => `- ${b}`).join('\n') + `\n\n`;
+      const eligibility = `**Eligibility**\n` + matchedScheme.eligibilityEn.map(e => `- ${e}`).join('\n') + `\n\n`;
+      const documents = `**Documents required**\n` + matchedScheme.documentsEn.map(d => `- ${d}`).join('\n') + `\n\n`;
       
-      const outro = `Please visit your nearest Grama Sachivalayam with these documents to register. For further queries, dial CM Helpline 1902 or check the "📍 Nearby Office" map on our app!`;
-      
-      return intro + summary + amount + benefits + eligibility + documents + outro;
+      const apply = `**How to apply**\n` +
+        `1. Visit your local Grama or Ward Sachivalayam (Village/Ward Secretariat).\n` +
+        `2. Submit the verified documents to your designated Welfare & Education Assistant.\n` +
+        `3. Track your social audit verification and beneficiary list enrollment status.\n\n`;
+        
+      const source = `**Official source:** [${portal.title}](${portal.url})\n\n` +
+        `*Note: For official verification and scheme rules, check the verified government portal or call the 1902 citizen helpline.*`;
+
+      return header + overview + benefits + eligibility + documents + apply + source;
     }
   }
 
   // General fallback response
   if (isTelugu) {
-    return easyMode
-      ? `నమస్కారం అమ్మగారు/అయ్యగారు. ప్రస్తుతానికి సర్వర్ కనెక్ట్ కావడంలో చిన్న తాత్కాలిక సమస్య ఉన్నందున నేను మీ ప్రశ్నకు నేరుగా సమాధానం చెప్పలేకపోతున్నాను. కానీ కంగారు పడకండి! మన యాప్ లో క్రింది పథకాల వివరాలు అందుబాటులో ఉన్నాయి:\n\n` +
-        `🌾 రైతు భరోసా, 🎓 అమ్మ ఒడి, 👴 పెన్ชั่น కానుక, 🏥 ఆరోగ్యశ్రీ వైద్యం, 📚 విద్యా దీవెన, 👩 చేయూత, 🏠 పేదలందరికీ ఇల్లు, 💰 సున్నా వడ్డీ.\n\n` +
-        `దయచేసి వీటిలో ఏదైనా ఒక పథకం పేరును లేదా మీ వయస్సు, చేసే పనిని చెబితే నేను వివరాలు అందిస్తాను. మీ సేవలో నేను సదా సిద్ధంగా ఉంటాను.`
-      : `నమస్కారం! సర్వర్ తాత్కాలికంగా కనెక్ట్ కాకపోవడంతో ప్రజా మిత్ర ఆఫ్ లైన్ సహాయం అందిస్తోంది. నేను ఈ క్రింది ముఖ్య పథకాలపై మీకు సహాయం చేయగలను:\n\n` +
-        `- వైఎస్సార్ రైతు భరోసా (రైతు పెట్టుబడి సాయం)\n` +
-        `- జగనన్న అమ్మ ఒడి (పాఠశాల పిల్లల తల్లులకు సాయం)\n` +
-        `- వైఎస్సార్ పెన్షన్ కానుక (వృద్ధాప్య, వితంతు, దివ్యాంగుల పెన్షన్లు)\n` +
-        `- వైఎస్సార్ ఆరోగ్యశ్రీ (₹25 లక్షల ఉచిత కార్పొరేట్ వైద్యం)\n` +
-        `- జగనన్న విద్యా దీవెన & వసతి దీవెన (కాలేజీ ఫీజు రీయింబర్స్మెంట్)\n` +
-        `- వైఎస్సార్ చేయూత (45-60 ఏళ్ల మహిళల ఉపాధి సాయం)\n` +
-        `- పేదలందరికీ ఇల్లు (ఉచిత ఇళ్ల స్థలం మరియు నిర్మాణ గ్రాంట్)\n` +
-        `- వైఎస్సార్ సున్నా వడ్డీ (పొదుపు సంఘాలు & పంట రుణాలపై వడ్డీ రద్దు)\n\n` +
-        `దయచేసి ఈ పథకాల్లో దేని గురించైనా ప్రశ్న అడగండి. మీకు పూర్తి వివరాలు అందిస్తాను!`;
+    return `**ప్రజా మిత్ర — సంక్షేమ పథకాల సమాచారం**\n\n` +
+      `నమస్కారం! నేను ఆంధ్రప్రదేశ్ ప్రభుత్వ సంక్షేమ పథకాల గురించి మీకు మార్గదర్శనం చేయగలను. మీరు క్రింది పథకాల గురించి తెలుసుకోవచ్చు:\n\n` +
+      `- **రైతు భరోసా / పీఎం కిసాన్:** రైతులకు పెట్టుబడి సహాయం\n` +
+      `- **తల్లికి వందనం / అమ్మ ఒడి:** పాఠశాల విద్యార్థుల తల్లులకు వార్షిక సాయం\n` +
+      `- **ఎన్టీఆర్ భరోసా / పెన్షన్ కానుక:** వృద్ధాప్య, వితంతు, దివ్యాంగుల పెన్షన్లు\n` +
+      `- **వైఎస్సార్ ఆరోగ్యశ్రీ:** కార్పొరేట్ ఆసుపత్రులలో ఉచిత వైద్య సేవలు\n` +
+      `- **విద్యా దీవెన & వసతి దీవెన:** పూర్తి కాలేజీ ఫీజు రీయింబర్స్మెంట్\n` +
+      `- **చేయూత & మహిళా సాధికారత:** ఉపాధి మరియు ఆర్థిక సహాయం\n` +
+      `- **పేదలందరికీ ఇళ్లు:** ఉచిత నివాస గృహాలు\n\n` +
+      `దయచేసి ఏదైనా పథకం పేరు లేదా మీ అవసరాన్ని అడగండి!\n\n` +
+      `**అధికారిక మూలం:** [గ్రామ వార్డు సచివాలయం పోర్టల్](https://gramawardsachivalayam.ap.gov.in)`;
   } else {
-    return easyMode
-      ? `Namaskaram. Currently, our AI servers are experiencing a small temporary delay, but don't worry! I can still assist you with information about our major welfare schemes:\n\n` +
-        `🌾 Rythu Bharosa (Farmers), 🎓 Amma Vodi (Students/Mothers), 👴 Pension Kanuka (Elderly/Widows), 🏥 Aarogyasri (Free Corporate Health), 📚 Vidya Deevena (Fee Reimbursement), 👩 Cheyutha (Women empowerment), 🏠 Housing Scheme, 💰 Zero Interest Loans.\n\n` +
-        `Please mention any of these schemes or tell me about your family needs so I can guide you.`
-      : `Namaskaram! Our AI servers are experiencing temporary high demand, but Praja Mitra is online with built-in assistant support. I can guide you on the following schemes:\n\n` +
-        `- YSR Rythu Bharosa (Farmer investment support)\n` +
-        `- Jagananna Amma Vodi (School student mothers support)\n` +
-        `- YSR Pension Kanuka (Doorstep doorstep elderly/disabled pension)\n` +
-        `- YSR Aarogyasri (Free corporate healthcare up to ₹25 Lakhs)\n` +
-        `- Jagananna Vidya Deevena & Vasathi Deevena (College fee reimbursement)\n` +
-        `- YSR Cheyutha (Welfare livelihood support for women aged 45-60)\n` +
-        `- Pedalandariki Illu (Free house plots & construction grants)\n` +
-        `- YSR Sunna Vaddi (Zero interest SHG bank linkage & crop loans)\n\n` +
-        `Please ask a question about any of these schemes to view complete details immediately!`;
+    return `**Praja Mitra — Welfare Schemes Assistance**\n\n` +
+      `Namaskaram! I can guide you on Andhra Pradesh government welfare schemes with verified information. You can ask about:\n\n` +
+      `- **PM-Kisan / Rythu Bharosa:** Investment support for farmers\n` +
+      `- **Thalliki Vandanam / Amma Vodi:** Financial assistance for school students' mothers\n` +
+      `- **NTR Bharosa / Pension Kanuka:** Monthly doorstep social pensions\n` +
+      `- **Dr. YSR Aarogyasri:** Free healthcare and corporate surgery coverage\n` +
+      `- **Vidya Deevena & Vasathi Deevena:** Full college fee reimbursement and hostel aid\n` +
+      `- **YSR Cheyutha:** Sustainable livelihood support for women\n` +
+      `- **Pedalandariki Illu:** Housing plots and construction grants\n\n` +
+      `Please ask a question about any of these schemes to view complete details.\n\n` +
+      `**Official source:** [AP Grama Ward Sachivalayam Portal](https://gramawardsachivalayam.ap.gov.in)`;
   }
 }
 
