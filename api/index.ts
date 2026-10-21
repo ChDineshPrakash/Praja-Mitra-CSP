@@ -1,8 +1,8 @@
 import "dotenv/config";
 import express from "express";
 import { GoogleGenAI } from "@google/genai";
-import { AP_SCHEMES } from "./schemes.js";
-import { authRouter } from "./auth.js";
+import { AP_SCHEMES } from "./_schemes.js";
+import { authRouter } from "./_auth.js";
 
 const app = express();
 app.use(express.json());
